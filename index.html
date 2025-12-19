@@ -123,8 +123,42 @@
 
         // --- 核心识别逻辑 ---
         async function startSystem() {
-            debugInfo.innerText = "状态: 正在初始化摄像头...";
-            const videoElement = document.querySelector('.input_video');
+    debugInfo.innerText = "状态: 正在请求摄像头权限...";
+    const videoElement = document.querySelector('.input_video');
+    
+    try {
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ 
+            maxNumHands: 1, 
+            modelComplexity: 0, // 手机端建议改为 0，能显著提升启动速度
+            minDetectionConfidence: 0.5 
+        });
+
+        // 绑定识别结果
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const lm = results.multiHandLandmarks[0];
+                const d = Math.sqrt(Math.pow(lm[8].x-lm[0].x,2) + Math.pow(lm[8].y-lm[0].y,2));
+                handOpenness = Math.max(0, Math.min(1, (d - 0.12) * 4));
+                debugInfo.innerText = "状态: 正在识别...";
+            }
+        });
+
+        const cameraInstance = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 480, height: 640 // 手机端使用较小分辨率更稳
+        });
+        
+        await cameraInstance.start();
+        document.getElementById('start-screen').style.display = 'none';
+        debugInfo.innerText = "状态: 运行中，请展示手掌";
+        initThree();
+        animate();
+    } catch (e) {
+        debugInfo.innerText = "错误: 请确认已在浏览器(Safari)中允许摄像头权限";
+        console.error(e);
+    }
+}
             
             const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
             hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
@@ -161,4 +195,5 @@
         document.getElementById('start-btn').addEventListener('click', startSystem);
     </script>
 </body>
+
 </html>

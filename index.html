@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 圣诞树手势交互 - 调试增强版</title>
+    <title>3D 圣诞手势交互 - 手机优化版</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #050a10; font-family: sans-serif; }
         #canvas-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1; }
@@ -15,11 +15,10 @@
             text-shadow: 0 0 15px rgba(240, 194, 123, 0.8);
         }
         
-        /* 调试窗口：显示手势状态 */
         #debug-info {
             position: absolute; top: 10px; left: 10px; z-index: 100;
             background: rgba(0,0,0,0.5); color: #0f0; padding: 10px; font-family: monospace;
-            font-size: 12px; pointer-events: none;
+            font-size: 12px; pointer-events: none; border-radius: 4px;
         }
 
         #start-screen {
@@ -40,7 +39,7 @@
 
     <div id="start-screen">
         <h1 style="color: #f0c27b;">MERRY CHRISTMAS</h1>
-        <p>必须在 http:// 或 https:// 环境下运行</p>
+        <p>推荐使用 Safari 或 Chrome 浏览器</p>
         <button id="start-btn">开启圣诞之旅</button>
     </div>
 
@@ -61,8 +60,8 @@
         let targetPositions = [], currentPositions = [];
         let handOpenness = 0;
         const debugInfo = document.getElementById('debug-info');
+        const particleCount = 8000; // 手机端平衡性能与效果
 
-        // --- 圣诞树生成逻辑 ---
         function getTreePoint() {
             const h = Math.random() * 12;
             const maxR = (12 - h) * 0.35 + (Math.random() * 0.3);
@@ -78,19 +77,19 @@
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
             const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(15000 * 3);
-            const cols = new Float32Array(15000 * 3);
+            const pos = new Float32Array(particleCount * 3);
+            const cols = new Float32Array(particleCount * 3);
             const colorPalette = [0xffd700, 0xff0000, 0x228b22, 0xffffff];
 
-            for (let i = 0; i < 15000; i++) {
+            for (let i = 0; i < particleCount; i++) {
                 const p = getTreePoint();
                 targetPositions.push(p);
                 currentPositions.push({x: p.x, y: p.y, z: p.z});
                 pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = p.z;
-                
                 const c = new THREE.Color(colorPalette[Math.floor(Math.random()*4)]);
                 cols[i*3] = c.r; cols[i*3+1] = c.g; cols[i*3+2] = c.b;
             }
@@ -98,7 +97,7 @@
             geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
 
             particles = new THREE.Points(geo, new THREE.PointsMaterial({
-                size: 0.1, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8
+                size: 0.12, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8
             }));
             scene.add(particles);
         }
@@ -107,11 +106,10 @@
         function animate() {
             requestAnimationFrame(animate);
             smoothOpen += (handOpenness - smoothOpen) * 0.1;
-            
             const posArr = particles.geometry.attributes.position.array;
-            const exp = 1 + smoothOpen * 6; // 扩散强度
+            const exp = 1 + smoothOpen * 6;
 
-            for(let i=0; i<15000; i++) {
+            for(let i=0; i < particleCount; i++) {
                 posArr[i*3] += (targetPositions[i].x * exp - posArr[i*3]) * 0.1;
                 posArr[i*3+1] += (targetPositions[i].y * exp - posArr[i*3+1]) * 0.1;
                 posArr[i*3+2] += (targetPositions[i].z * exp - posArr[i*3+2]) * 0.1;
@@ -121,79 +119,57 @@
             renderer.render(scene, camera);
         }
 
-        // --- 核心识别逻辑 ---
         async function startSystem() {
-    debugInfo.innerText = "状态: 正在请求摄像头权限...";
-    const videoElement = document.querySelector('.input_video');
-    
-    try {
-        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ 
-            maxNumHands: 1, 
-            modelComplexity: 0, // 手机端建议改为 0，能显著提升启动速度
-            minDetectionConfidence: 0.5 
-        });
-
-        // 绑定识别结果
-        hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const lm = results.multiHandLandmarks[0];
-                const d = Math.sqrt(Math.pow(lm[8].x-lm[0].x,2) + Math.pow(lm[8].y-lm[0].y,2));
-                handOpenness = Math.max(0, Math.min(1, (d - 0.12) * 4));
-                debugInfo.innerText = "状态: 正在识别...";
-            }
-        });
-
-        const cameraInstance = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 480, height: 640 // 手机端使用较小分辨率更稳
-        });
-        
-        await cameraInstance.start();
-        document.getElementById('start-screen').style.display = 'none';
-        debugInfo.innerText = "状态: 运行中，请展示手掌";
-        initThree();
-        animate();
-    } catch (e) {
-        debugInfo.innerText = "错误: 请确认已在浏览器(Safari)中允许摄像头权限";
-        console.error(e);
-    }
-}
+            debugInfo.innerText = "状态: 正在加载模型并请求摄像头...";
+            const videoElement = document.querySelector('.input_video');
             
-            const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-            hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
+            try {
+                const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+                hands.setOptions({ 
+                    maxNumHands: 1, 
+                    modelComplexity: 0, 
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
 
-            hands.onResults((results) => {
-                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                    const lm = results.multiHandLandmarks[0];
-                    // 计算距离：指尖到掌心
-                    const d = Math.sqrt(Math.pow(lm[8].x-lm[0].x,2) + Math.pow(lm[8].y-lm[0].y,2));
-                    handOpenness = Math.max(0, Math.min(1, (d - 0.12) * 4)); // 调整灵敏度
-                    debugInfo.innerText = `状态: 检测到手势 | 张开度: ${handOpenness.toFixed(2)}`;
-                    debugInfo.style.color = "#0f0";
-                } else {
-                    handOpenness = 0;
-                    debugInfo.innerText = "状态: 未检测到手";
-                    debugInfo.style.color = "#f00";
-                }
-            });
+                hands.onResults((results) => {
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        const lm = results.multiHandLandmarks[0];
+                        const d = Math.sqrt(Math.pow(lm[8].x-lm[0].x,2) + Math.pow(lm[8].y-lm[0].y,2));
+                        handOpenness = Math.max(0, Math.min(1, (d - 0.12) * 4));
+                        debugInfo.innerText = "状态: 识别中 - 张开度 " + handOpenness.toFixed(2);
+                        debugInfo.style.color = "#0f0";
+                    } else {
+                        handOpenness = 0;
+                        debugInfo.innerText = "状态: 未检测到手势";
+                        debugInfo.style.color = "#f00";
+                    }
+                });
 
-            const camera = new Camera(videoElement, {
-                onFrame: async () => { await hands.send({image: videoElement}); },
-                width: 640, height: 480
-            });
-            
-            camera.start().then(() => {
+                const cameraInstance = new Camera(videoElement, {
+                    onFrame: async () => { await hands.send({image: videoElement}); },
+                    width: 480, height: 640
+                });
+                
+                await cameraInstance.start();
                 document.getElementById('start-screen').style.display = 'none';
                 initThree();
                 animate();
-            }).catch(e => {
-                debugInfo.innerText = "错误: 摄像头开启失败 " + e;
-            });
+            } catch (e) {
+                debugInfo.innerText = "错误: " + e.message;
+                console.error(e);
+            }
         }
 
         document.getElementById('start-btn').addEventListener('click', startSystem);
+        
+        window.addEventListener('resize', () => {
+            if(camera) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
     </script>
 </body>
-
 </html>
